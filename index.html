@@ -210,11 +210,14 @@
 <h1>JSON Attribute Editor</h1>
 <p class="subtitle">Load a JSON file, find an item by name, set its attributes to 20, export the result. Everything stays on your device.</p>
 
+<div class="status error hidden" id="globalError"></div>
+
 <div class="card">
   <h2>1. Load file</h2>
   <label class="file-drop" id="fileDrop" for="fileInput" tabindex="0">Tap to choose a .json file</label>
   <input type="file" id="fileInput" accept=".json,application/json">
   <div class="filename" id="fileName"></div>
+  <div class="status hidden" id="fileStatus"></div>
 </div>
 
 <div class="card hidden" id="searchCard">
@@ -250,6 +253,12 @@
 (function () {
   'use strict';
 
+  window.addEventListener('error', function (e) {
+    var el = document.getElementById('globalError');
+    el.classList.remove('hidden');
+    el.textContent = 'Something went wrong: ' + (e.message || 'unknown error') + '. Try reloading the page.';
+  });
+
   var state = {
     data: null,
     originalName: 'data',
@@ -274,6 +283,7 @@
   var exportCard = document.getElementById('exportCard');
   var applyStatus = document.getElementById('applyStatus');
   var jsonPreview = document.getElementById('jsonPreview');
+  var fileStatus = document.getElementById('fileStatus');
   var downloadBtn = document.getElementById('downloadBtn');
   var copyBtn = document.getElementById('copyBtn');
   var copyStatus = document.getElementById('copyStatus');
@@ -308,22 +318,29 @@
     }
   });
 
+  function showFileError(message) {
+    fileDrop.classList.remove('has-file');
+    fileDrop.textContent = 'Tap to choose a .json file';
+    fileName.textContent = '';
+    searchCard.classList.add('hidden');
+    fileStatus.className = 'status error';
+    fileStatus.textContent = message;
+  }
+
   fileInput.addEventListener('change', function () {
     var file = fileInput.files[0];
     if (!file) return;
 
+    fileStatus.className = 'status hidden';
+    fileStatus.textContent = '';
+
     var reader = new FileReader();
     reader.onload = function () {
-      var text = reader.result;
       var parsed;
       try {
-        parsed = JSON.parse(text);
+        parsed = JSON.parse(reader.result);
       } catch (e) {
-        fileDrop.classList.remove('has-file');
-        fileDrop.textContent = 'Tap to choose a .json file';
-        fileName.textContent = '';
-        searchCard.classList.add('hidden');
-        alert('That file is not valid JSON: ' + e.message);
+        showFileError('That file is not valid JSON: ' + e.message);
         return;
       }
       state.data = parsed;
@@ -337,9 +354,13 @@
       nameInput.focus();
     };
     reader.onerror = function () {
-      alert('Could not read that file. Please try again.');
+      showFileError('Could not read that file (' + (reader.error ? reader.error.message : 'unknown error') + '). Please try again.');
     };
-    reader.readAsText(file);
+    try {
+      reader.readAsText(file);
+    } catch (e) {
+      showFileError('Could not read that file: ' + e.message);
+    }
   });
 
   function isPlainObject(v) {
