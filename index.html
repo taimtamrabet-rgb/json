@@ -172,6 +172,17 @@
     color: var(--ok);
     font-weight: 700;
   }
+  .money-input {
+    width: 120px;
+    text-align: right;
+    font-family: var(--mono);
+    font-size: 0.9rem;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+  }
   pre {
     background: var(--bg);
     border: 1px solid var(--border);
@@ -236,7 +247,11 @@
 <div class="card hidden" id="attrsCard">
   <h2>4. Attributes to set to 20</h2>
   <div id="attrList"></div>
-  <button id="applyBtn">Set selected attributes to 20</button>
+  <div class="attr-row hidden" id="moneyRow">
+    <label><input type="checkbox" id="moneyCheckbox" checked> <span id="moneyKeyLabel"></span></label>
+    <input type="text" inputmode="numeric" id="moneyInput" class="money-input">
+  </div>
+  <button id="applyBtn">Apply changes</button>
 </div>
 
 <div class="card hidden" id="exportCard">
@@ -265,7 +280,8 @@
     matches: [],       // [{ path: [...keys], obj: reference }]
     selectedIndex: -1,
     attrKeys: [],       // keys within the chosen attribute container
-    attrContainer: null // the object whose keys get set to 20 (may be the item itself or a nested sub-object)
+    attrContainer: null, // the object whose keys get set to 20 (may be the item itself or a nested sub-object)
+    moneyField: null   // { container, key } for a detected money-like field, or null
   };
 
   var fileInput = document.getElementById('fileInput');
@@ -279,6 +295,10 @@
   var matchList = document.getElementById('matchList');
   var attrsCard = document.getElementById('attrsCard');
   var attrList = document.getElementById('attrList');
+  var moneyRow = document.getElementById('moneyRow');
+  var moneyCheckbox = document.getElementById('moneyCheckbox');
+  var moneyKeyLabel = document.getElementById('moneyKeyLabel');
+  var moneyInput = document.getElementById('moneyInput');
   var applyBtn = document.getElementById('applyBtn');
   var exportCard = document.getElementById('exportCard');
   var applyStatus = document.getElementById('applyStatus');
@@ -303,11 +323,13 @@
     state.selectedIndex = -1;
     state.attrKeys = [];
     state.attrContainer = null;
+    state.moneyField = null;
     matchesCard.classList.add('hidden');
     attrsCard.classList.add('hidden');
     exportCard.classList.add('hidden');
     matchList.innerHTML = '';
     attrList.innerHTML = '';
+    moneyRow.classList.add('hidden');
     searchStatus.innerHTML = '';
   }
 
@@ -529,21 +551,41 @@
     return { container: obj, keys: ownKeys };
   }
 
+  var MONEY_KEY_PATTERN = /money|coin|cash|gold/i;
+
+  // Breadth-first search (shallowest match wins) through the matched item's
+  // own sub-objects for a numeric field that looks like in-game currency.
+  function findMoneyField(obj, identifyingKey) {
+    var excludedKeys = identifyingKey.indexOf(' + ') !== -1 ? identifyingKey.split(' + ') : [identifyingKey];
+    var visited = new Set();
+    var queue = [obj];
+    while (queue.length) {
+      var node = queue.shift();
+      if (!isPlainObject(node) || visited.has(node)) continue;
+      visited.add(node);
+      var keys = Object.keys(node);
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        if (node === obj && excludedKeys.indexOf(k) !== -1) continue;
+        if (isNumeric(node[k]) && MONEY_KEY_PATTERN.test(k)) {
+          return { container: node, key: k };
+        }
+      }
+      for (var j = 0; j < keys.length; j++) {
+        if (isPlainObject(node[keys[j]])) queue.push(node[keys[j]]);
+      }
+    }
+    return null;
+  }
+
   function renderAttrs() {
     var match = state.matches[state.selectedIndex];
     var picked = pickAttributeContainer(match.obj, match.matchedKey);
     state.attrContainer = picked.container;
     state.attrKeys = picked.keys;
+    state.moneyField = findMoneyField(match.obj, match.matchedKey);
 
     attrList.innerHTML = '';
-    if (picked.keys.length === 0) {
-      attrList.innerHTML = '<div class="status error">No numeric attributes found on this item.</div>';
-      attrsCard.classList.remove('hidden');
-      applyBtn.disabled = true;
-      return;
-    }
-    applyBtn.disabled = false;
-
     picked.keys.forEach(function (key) {
       var row = document.createElement('div');
       row.className = 'attr-row';
@@ -554,27 +596,58 @@
       attrList.appendChild(row);
     });
 
+    if (state.moneyField) {
+      moneyRow.classList.remove('hidden');
+      moneyKeyLabel.textContent = state.moneyField.key;
+      moneyCheckbox.checked = true;
+      moneyInput.value = state.moneyField.container[state.moneyField.key];
+    } else {
+      moneyRow.classList.add('hidden');
+    }
+
+    if (picked.keys.length === 0 && !state.moneyField) {
+      attrList.innerHTML = '<div class="status error">No numeric attributes found on this item.</div>';
+      applyBtn.disabled = true;
+    } else {
+      applyBtn.disabled = false;
+    }
+
     attrsCard.classList.remove('hidden');
     exportCard.classList.add('hidden');
   }
 
   applyBtn.addEventListener('click', function () {
     var checkboxes = attrList.querySelectorAll('input[type="checkbox"]');
-    var changed = [];
+    var changes = [];
     checkboxes.forEach(function (cb) {
       if (cb.checked) {
         var key = cb.getAttribute('data-key');
         state.attrContainer[key] = 20;
-        changed.push(key);
+        changes.push(key + ' → 20');
       }
     });
 
-    if (changed.length === 0) {
+    var moneyInvalid = false;
+    if (state.moneyField && moneyCheckbox.checked) {
+      var raw = moneyInput.value.replace(/,/g, '').trim();
+      var num = Number(raw);
+      if (raw !== '' && Number.isFinite(num)) {
+        state.moneyField.container[state.moneyField.key] = num;
+        changes.push(state.moneyField.key + ' → ' + num);
+      } else {
+        moneyInvalid = true;
+      }
+    }
+
+    if (changes.length === 0) {
       applyStatus.className = 'status error';
-      applyStatus.textContent = 'No attributes selected — nothing changed.';
+      applyStatus.textContent = moneyInvalid
+        ? 'Enter a valid number for ' + state.moneyField.key + '.'
+        : 'Nothing selected — nothing changed.';
     } else {
       applyStatus.className = 'status ok';
-      applyStatus.textContent = 'Set to 20: ' + changed.join(', ');
+      applyStatus.textContent = 'Set ' + changes.join(', ') +
+        (moneyInvalid ? ' (' + state.moneyField.key + ' left unchanged — enter a valid number)' : '') + '.';
     }
 
     jsonPreview.textContent = JSON.stringify(state.data, null, 2);
