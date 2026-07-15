@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>JSON Attribute Editor</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f5f7;
+    --card: #ffffff;
+    --text: #1a1a1a;
+    --muted: #6b6b70;
+    --border: #dcdce0;
+    --accent: #2563eb;
+    --accent-text: #ffffff;
+    --danger: #b3261e;
+    --ok: #1a7f37;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121214;
+      --card: #1c1c1f;
+      --text: #f0f0f2;
+      --muted: #9a9aa2;
+      --border: #333338;
+      --accent: #3b82f6;
+      --accent-text: #0a0a0a;
+      --danger: #ff6b64;
+      --ok: #4ade80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 16px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.4;
+    max-width: 640px;
+    margin-inline: auto;
+    padding-bottom: 80px;
+  }
+  h1 {
+    font-size: 1.3rem;
+    margin: 0 0 4px;
+  }
+  p.subtitle {
+    color: var(--muted);
+    margin: 0 0 20px;
+    font-size: 0.92rem;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .card h2 {
+    font-size: 1rem;
+    margin: 0 0 12px;
+  }
+  label {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  input[type="text"] {
+    width: 100%;
+    font-size: 1rem;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+  }
+  .file-drop {
+    display: block;
+    width: 100%;
+    padding: 18px;
+    text-align: center;
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.95rem;
+  }
+  .file-drop.has-file {
+    border-color: var(--ok);
+    color: var(--text);
+  }
+  input[type="file"] { display: none; }
+  button {
+    width: 100%;
+    font-size: 1rem;
+    font-weight: 600;
+    padding: 14px;
+    border-radius: 10px;
+    border: none;
+    background: var(--accent);
+    color: var(--accent-text);
+    cursor: pointer;
+    margin-top: 6px;
+  }
+  button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  button.secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  .match-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .match-item {
+    text-align: left;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  .match-item.selected {
+    border-color: var(--accent);
+    outline: 2px solid var(--accent);
+  }
+  .match-path {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    display: block;
+    margin-bottom: 4px;
+    word-break: break-all;
+  }
+  .attr-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .attr-row:last-child { border-bottom: none; }
+  .attr-row label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text);
+    font-size: 0.95rem;
+    margin: 0;
+  }
+  .attr-row input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+  }
+  .attr-value {
+    font-family: var(--mono);
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .attr-value.new {
+    color: var(--ok);
+    font-weight: 700;
+  }
+  pre {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    max-height: 320px;
+  }
+  .status {
+    font-size: 0.88rem;
+    padding: 10px 12px;
+    border-radius: 10px;
+    margin-bottom: 12px;
+  }
+  .status.error {
+    background: color-mix(in srgb, var(--danger) 15%, transparent);
+    color: var(--danger);
+  }
+  .status.ok {
+    background: color-mix(in srgb, var(--ok) 15%, transparent);
+    color: var(--ok);
+  }
+  .hidden { display: none !important; }
+  .filename {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-top: 8px;
+    word-break: break-all;
+  }
+</style>
+</head>
+<body>
+
+<h1>JSON Attribute Editor</h1>
+<p class="subtitle">Load a JSON file, find an item by name, set its attributes to 20, export the result. Everything stays on your device.</p>
+
+<div class="card">
+  <h2>1. Load file</h2>
+  <label class="file-drop" id="fileDrop" for="fileInput">Tap to choose a .json file</label>
+  <input type="file" id="fileInput" accept=".json,application/json">
+  <div class="filename" id="fileName"></div>
+</div>
+
+<div class="card hidden" id="searchCard">
+  <h2>2. Find item by name</h2>
+  <label for="nameInput">Name to search for</label>
+  <input type="text" id="nameInput" placeholder="e.g. Goku, Player1, Sword...">
+  <button id="findBtn">Find</button>
+  <div id="searchStatus"></div>
+</div>
+
+<div class="card hidden" id="matchesCard">
+  <h2>3. Pick the match</h2>
+  <div class="match-list" id="matchList"></div>
+</div>
+
+<div class="card hidden" id="attrsCard">
+  <h2>4. Attributes to set to 20</h2>
+  <div id="attrList"></div>
+  <button id="applyBtn">Set selected attributes to 20</button>
+</div>
+
+<div class="card hidden" id="exportCard">
+  <h2>5. Export</h2>
+  <div class="status ok" id="applyStatus"></div>
+  <pre id="jsonPreview"></pre>
+  <button id="downloadBtn">Download .json</button>
+  <button class="secondary" id="startOverBtn">Start over</button>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var state = {
+    data: null,
+    originalName: 'data',
+    matches: [],       // [{ path: [...keys], obj: reference }]
+    selectedIndex: -1,
+    attrKeys: [],       // keys within the chosen attribute container
+    attrContainer: null // the object whose keys get set to 20 (may be the item itself or a nested sub-object)
+  };
+
+  var fileInput = document.getElementById('fileInput');
+  var fileDrop = document.getElementById('fileDrop');
+  var fileName = document.getElementById('fileName');
+  var searchCard = document.getElementById('searchCard');
+  var nameInput = document.getElementById('nameInput');
+  var findBtn = document.getElementById('findBtn');
+  var searchStatus = document.getElementById('searchStatus');
+  var matchesCard = document.getElementById('matchesCard');
+  var matchList = document.getElementById('matchList');
+  var attrsCard = document.getElementById('attrsCard');
+  var attrList = document.getElementById('attrList');
+  var applyBtn = document.getElementById('applyBtn');
+  var exportCard = document.getElementById('exportCard');
+  var applyStatus = document.getElementById('applyStatus');
+  var jsonPreview = document.getElementById('jsonPreview');
+  var downloadBtn = document.getElementById('downloadBtn');
+  var startOverBtn = document.getElementById('startOverBtn');
+
+  var IDENTIFYING_KEYS = ['name', 'id', 'title', 'label'];
+  var ATTRIBUTE_CONTAINER_KEYS = ['attributes', 'stats', 'attrs'];
+  var NAME_PART_PAIRS = [
+    ['firstName', 'lastName'],
+    ['first_name', 'last_name'],
+    ['first', 'last'],
+    ['givenName', 'familyName']
+  ];
+
+  function resetAfterFile() {
+    state.matches = [];
+    state.selectedIndex = -1;
+    state.attrKeys = [];
+    state.attrContainer = null;
+    matchesCard.classList.add('hidden');
+    attrsCard.classList.add('hidden');
+    exportCard.classList.add('hidden');
+    matchList.innerHTML = '';
+    attrList.innerHTML = '';
+    searchStatus.innerHTML = '';
+  }
+
+  fileInput.addEventListener('change', function () {
+    var file = fileInput.files[0];
+    if (!file) return;
+
+    var reader = new FileReader();
+    reader.onload = function () {
+      var text = reader.result;
+      var parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch (e) {
+        fileDrop.classList.remove('has-file');
+        fileDrop.textContent = 'Tap to choose a .json file';
+        fileName.textContent = '';
+        searchCard.classList.add('hidden');
+        alert('That file is not valid JSON: ' + e.message);
+        return;
+      }
+      state.data = parsed;
+      state.originalName = file.name.replace(/\.json$/i, '') || 'data';
+      fileDrop.classList.add('has-file');
+      fileDrop.textContent = 'File loaded ✓ (tap to replace)';
+      fileName.textContent = file.name;
+      searchCard.classList.remove('hidden');
+      resetAfterFile();
+      nameInput.value = '';
+      nameInput.focus();
+    };
+    reader.onerror = function () {
+      alert('Could not read that file. Please try again.');
+    };
+    reader.readAsText(file);
+  });
+
+  function isPlainObject(v) {
+    return v !== null && typeof v === 'object' && !Array.isArray(v);
+  }
+
+  function isNumeric(v) {
+    return typeof v === 'number' && !Number.isNaN(v);
+  }
+
+  // Recursively walk the tree, collecting every plain object that has a
+  // string/number-valued property matching `name` (case-insensitive).
+  function findMatches(root, name) {
+    var needle = String(name).trim().toLowerCase();
+    var results = [];
+    var seen = new Set();
+
+    function visit(node, path) {
+      if (Array.isArray(node)) {
+        node.forEach(function (child, i) { visit(child, path.concat(i)); });
+        return;
+      }
+      if (!isPlainObject(node)) return;
+
+      var matchedKey = null;
+      // Prefer identifying keys first.
+      for (var i = 0; i < IDENTIFYING_KEYS.length; i++) {
+        var k = IDENTIFYING_KEYS[i];
+        if (k in node && String(node[k]).toLowerCase() === needle) {
+          matchedKey = k;
+          break;
+        }
+      }
+      // Then try common "First Last" name-part pairs (e.g. firstName + lastName).
+      if (!matchedKey) {
+        for (var p = 0; p < NAME_PART_PAIRS.length; p++) {
+          var pair = NAME_PART_PAIRS[p];
+          var first = pair[0], last = pair[1];
+          if (typeof node[first] === 'string' && typeof node[last] === 'string') {
+            var full = (node[first] + ' ' + node[last]).toLowerCase();
+            if (full === needle) {
+              matchedKey = first + ' + ' + last;
+              break;
+            }
+          }
+        }
+      }
+      // Fall back to any string/number field matching.
+      if (!matchedKey) {
+        for (var key in node) {
+          if (!Object.prototype.hasOwnProperty.call(node, key)) continue;
+          var val = node[key];
+          if ((typeof val === 'string' || typeof val === 'number') &&
+              String(val).toLowerCase() === needle) {
+            matchedKey = key;
+            break;
+          }
+        }
+      }
+
+      if (matchedKey && !seen.has(node)) {
+        seen.add(node);
+        results.push({ path: path, obj: node, matchedKey: matchedKey });
+      }
+
+      for (var childKey in node) {
+        if (!Object.prototype.hasOwnProperty.call(node, childKey)) continue;
+        visit(node[childKey], path.concat(childKey));
+      }
+    }
+
+    visit(root, []);
+    return results;
+  }
+
+  function pathToString(path) {
+    if (path.length === 0) return '(root)';
+    return path.map(function (p) {
+      return typeof p === 'number' ? '[' + p + ']' : p;
+    }).join(' › ');
+  }
+
+  findBtn.addEventListener('click', function () {
+    var name = nameInput.value.trim();
+    matchesCard.classList.add('hidden');
+    attrsCard.classList.add('hidden');
+    exportCard.classList.add('hidden');
+    matchList.innerHTML = '';
+    attrList.innerHTML = '';
+
+    if (!name) {
+      searchStatus.innerHTML = '<div class="status error">Type a name to search for.</div>';
+      return;
+    }
+    if (!state.data) {
+      searchStatus.innerHTML = '<div class="status error">Load a file first.</div>';
+      return;
+    }
+
+    var matches = findMatches(state.data, name);
+    state.matches = matches;
+
+    if (matches.length === 0) {
+      searchStatus.innerHTML = '<div class="status error">No item found matching "' + escapeHtml(name) + '".</div>';
+      return;
+    }
+
+    searchStatus.innerHTML = '<div class="status ok">Found ' + matches.length + ' match' + (matches.length > 1 ? 'es' : '') + '.</div>';
+
+    if (matches.length === 1) {
+      selectMatch(0);
+    } else {
+      renderMatchList();
+      matchesCard.classList.remove('hidden');
+    }
+  });
+
+  function matchedValueDisplay(obj, matchedKey) {
+    if (matchedKey.indexOf(' + ') !== -1) {
+      var parts = matchedKey.split(' + ');
+      return parts.map(function (k) { return obj[k]; }).join(' ');
+    }
+    return String(obj[matchedKey]);
+  }
+
+  function renderMatchList() {
+    matchList.innerHTML = '';
+    state.matches.forEach(function (m, i) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'match-item';
+      var snippetKeys = Object.keys(m.obj).slice(0, 4).join(', ');
+      btn.innerHTML = '<span class="match-path">' + escapeHtml(pathToString(m.path)) + '</span>' +
+        escapeHtml(m.matchedKey) + ': ' + escapeHtml(matchedValueDisplay(m.obj, m.matchedKey)) +
+        ' <span class="attr-value">{' + escapeHtml(snippetKeys) + (Object.keys(m.obj).length > 4 ? ', …' : '') + '}</span>';
+      btn.addEventListener('click', function () { selectMatch(i); });
+      matchList.appendChild(btn);
+    });
+  }
+
+  function selectMatch(index) {
+    state.selectedIndex = index;
+    Array.prototype.forEach.call(matchList.children, function (child, i) {
+      child.classList.toggle('selected', i === index);
+    });
+    matchesCard.classList.remove('hidden');
+    renderAttrs();
+  }
+
+  // Decide which object's keys are "the attributes": a nested attributes/stats
+  // sub-object if one exists, otherwise the item's own numeric fields.
+  function pickAttributeContainer(obj, identifyingKey) {
+    for (var i = 0; i < ATTRIBUTE_CONTAINER_KEYS.length; i++) {
+      var key = ATTRIBUTE_CONTAINER_KEYS[i];
+      if (isPlainObject(obj[key])) {
+        var numericKeys = Object.keys(obj[key]).filter(function (k) { return isNumeric(obj[key][k]); });
+        if (numericKeys.length > 0) {
+          return { container: obj[key], keys: numericKeys };
+        }
+      }
+    }
+    var excludedKeys = identifyingKey.indexOf(' + ') !== -1 ? identifyingKey.split(' + ') : [identifyingKey];
+    var ownKeys = Object.keys(obj).filter(function (k) {
+      return excludedKeys.indexOf(k) === -1 && isNumeric(obj[k]);
+    });
+    return { container: obj, keys: ownKeys };
+  }
+
+  function renderAttrs() {
+    var match = state.matches[state.selectedIndex];
+    var picked = pickAttributeContainer(match.obj, match.matchedKey);
+    state.attrContainer = picked.container;
+    state.attrKeys = picked.keys;
+
+    attrList.innerHTML = '';
+    if (picked.keys.length === 0) {
+      attrList.innerHTML = '<div class="status error">No numeric attributes found on this item.</div>';
+      attrsCard.classList.remove('hidden');
+      applyBtn.disabled = true;
+      return;
+    }
+    applyBtn.disabled = false;
+
+    picked.keys.forEach(function (key) {
+      var row = document.createElement('div');
+      row.className = 'attr-row';
+      var currentVal = picked.container[key];
+      row.innerHTML =
+        '<label><input type="checkbox" checked data-key="' + escapeHtml(key) + '"> ' + escapeHtml(key) + '</label>' +
+        '<span class="attr-value">' + currentVal + ' → <span class="new">20</span></span>';
+      attrList.appendChild(row);
+    });
+
+    attrsCard.classList.remove('hidden');
+    exportCard.classList.add('hidden');
+  }
+
+  applyBtn.addEventListener('click', function () {
+    var checkboxes = attrList.querySelectorAll('input[type="checkbox"]');
+    var changed = [];
+    checkboxes.forEach(function (cb) {
+      if (cb.checked) {
+        var key = cb.getAttribute('data-key');
+        state.attrContainer[key] = 20;
+        changed.push(key);
+      }
+    });
+
+    if (changed.length === 0) {
+      applyStatus.className = 'status error';
+      applyStatus.textContent = 'No attributes selected — nothing changed.';
+    } else {
+      applyStatus.className = 'status ok';
+      applyStatus.textContent = 'Set to 20: ' + changed.join(', ');
+    }
+
+    jsonPreview.textContent = JSON.stringify(state.data, null, 2);
+    exportCard.classList.remove('hidden');
+    exportCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  downloadBtn.addEventListener('click', function () {
+    var blob = new Blob([JSON.stringify(state.data, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = state.originalName + '-edited.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  startOverBtn.addEventListener('click', function () {
+    fileInput.value = '';
+    state.data = null;
+    fileDrop.classList.remove('has-file');
+    fileDrop.textContent = 'Tap to choose a .json file';
+    fileName.textContent = '';
+    searchCard.classList.add('hidden');
+    resetAfterFile();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  nameInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') findBtn.click();
+  });
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+})();
+</script>
+
+</body>
+</html>
