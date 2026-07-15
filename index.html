@@ -214,12 +214,42 @@
     margin-top: 8px;
     word-break: break-all;
   }
+  .game-select {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .game-btn {
+    width: auto;
+    flex: 1 1 auto;
+    padding: 10px 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    margin-top: 0;
+  }
+  .game-btn.selected {
+    background: var(--accent);
+    color: var(--accent-text);
+    border-color: var(--accent);
+  }
 </style>
 </head>
 <body>
 
-<h1>JSON Attribute Editor</h1>
-<p class="subtitle">Load a JSON file, find an item by name, set its attributes to 20, export the result. Everything stays on your device.</p>
+<h1 id="pageTitle">JSON Attribute Editor</h1>
+<p class="subtitle" id="pageSubtitle">Load a JSON file, find an item by name, set its attributes to 20, export the result. Everything stays on your device.</p>
+
+<div class="card">
+  <h2>Game</h2>
+  <div class="game-select" id="gameSelect">
+    <button type="button" class="game-btn selected" data-game="generic">Generic / Other</button>
+    <button type="button" class="game-btn" data-game="prizefighters2">Prizefighters 2</button>
+    <button type="button" class="game-btn" data-game="hoopland">Hoop Land</button>
+  </div>
+</div>
 
 <div class="status error hidden" id="globalError"></div>
 
@@ -277,12 +307,50 @@
   var state = {
     data: null,
     originalName: 'data',
+    gamePreset: 'generic',
     matches: [],       // [{ path: [...keys], obj: reference }]
     selectedIndex: -1,
     attrKeys: [],       // keys within the chosen attribute container
     attrContainer: null, // the object whose keys get set to 20 (may be the item itself or a nested sub-object)
-    moneyField: null   // { container, key } for a detected money-like field, or null
+    moneyField: null,  // { container, key } for a detected money-like field, or null
+    exportJson: null   // compact JSON string produced by the last "Apply changes"
   };
+
+  var GAME_LABELS = {
+    generic: {
+      title: 'JSON Attribute Editor',
+      subtitle: 'Load a JSON file, find an item by name, set its attributes to 20, export the result. Everything stays on your device.'
+    },
+    prizefighters2: {
+      title: 'Prizefighters 2 Attribute Editor',
+      subtitle: 'Load a Prizefighters 2 save, find a fighter by name, set their attributes to 20, export the result.'
+    },
+    hoopland: {
+      title: 'Hoop Land Attribute Editor',
+      subtitle: 'Load a Hoop Land save, find a player by name, set their ratings to 20, export the result.'
+    }
+  };
+
+  // Curated known attribute keys per game, used to filter out unrelated
+  // numeric fields when a container holds more than just the real stats.
+  var KNOWN_ATTRIBUTE_KEYS = {
+    prizefighters2: ['STR', 'SPD', 'STM', 'END', 'CHN', 'jab', 'cross', 'leadHook', 'rearHook', 'leadUppercut', 'rearUppercut'],
+    hoopland: ['LAY', 'DNK', 'INS', 'MID', 'TPT', 'FTS', 'DRB', 'PAS', 'ORE', 'DRE', 'STL', 'BLK', 'STR', 'SPD', 'STM']
+  };
+
+  var pageTitle = document.getElementById('pageTitle');
+  var pageSubtitle = document.getElementById('pageSubtitle');
+  var gameButtons = document.querySelectorAll('.game-btn');
+  gameButtons.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      gameButtons.forEach(function (b) { b.classList.remove('selected'); });
+      btn.classList.add('selected');
+      state.gamePreset = btn.getAttribute('data-game');
+      var labels = GAME_LABELS[state.gamePreset] || GAME_LABELS.generic;
+      pageTitle.textContent = labels.title;
+      pageSubtitle.textContent = labels.subtitle;
+    });
+  });
 
   var fileInput = document.getElementById('fileInput');
   var fileDrop = document.getElementById('fileDrop');
@@ -315,7 +383,8 @@
     ['firstName', 'lastName'],
     ['first_name', 'last_name'],
     ['first', 'last'],
-    ['givenName', 'familyName']
+    ['givenName', 'familyName'],
+    ['fn', 'ln']
   ];
 
   function resetAfterFile() {
@@ -391,6 +460,17 @@
 
   function isNumeric(v) {
     return typeof v === 'number' && !Number.isNaN(v);
+  }
+
+  // Some games store a stat as a [current, potential] pair (e.g. Hoop Land's
+  // "DNK": [18, 18]) instead of a plain number. Treat that as one editable
+  // attribute whose every element gets set to 20.
+  function isNumericArray(v) {
+    return Array.isArray(v) && v.length > 0 && v.every(isNumeric);
+  }
+
+  function isEditableAttrValue(v) {
+    return isNumeric(v) || isNumericArray(v);
   }
 
   // Recursively walk the tree, collecting every plain object that has a
@@ -532,23 +612,34 @@
     renderAttrs();
   }
 
+  // If a game preset is active and at least one of its known keys is
+  // actually present, narrow down to just those -- keeps unrelated numeric
+  // noise (age, height, ranking, ...) out of the checklist.
+  function filterToKnownKeys(keys, gamePreset) {
+    var known = KNOWN_ATTRIBUTE_KEYS[gamePreset];
+    if (!known) return keys;
+    var filtered = keys.filter(function (k) { return known.indexOf(k) !== -1; });
+    return filtered.length > 0 ? filtered : keys;
+  }
+
   // Decide which object's keys are "the attributes": a nested attributes/stats
-  // sub-object if one exists, otherwise the item's own numeric fields.
-  function pickAttributeContainer(obj, identifyingKey) {
+  // sub-object if one exists, otherwise the item's own numeric fields. A key's
+  // value may be a plain number or a [current, potential]-style numeric array.
+  function pickAttributeContainer(obj, identifyingKey, gamePreset) {
     for (var i = 0; i < ATTRIBUTE_CONTAINER_KEYS.length; i++) {
       var key = ATTRIBUTE_CONTAINER_KEYS[i];
       if (isPlainObject(obj[key])) {
-        var numericKeys = Object.keys(obj[key]).filter(function (k) { return isNumeric(obj[key][k]); });
+        var numericKeys = Object.keys(obj[key]).filter(function (k) { return isEditableAttrValue(obj[key][k]); });
         if (numericKeys.length > 0) {
-          return { container: obj[key], keys: numericKeys };
+          return { container: obj[key], keys: filterToKnownKeys(numericKeys, gamePreset) };
         }
       }
     }
     var excludedKeys = identifyingKey.indexOf(' + ') !== -1 ? identifyingKey.split(' + ') : [identifyingKey];
     var ownKeys = Object.keys(obj).filter(function (k) {
-      return excludedKeys.indexOf(k) === -1 && isNumeric(obj[k]);
+      return excludedKeys.indexOf(k) === -1 && isEditableAttrValue(obj[k]);
     });
-    return { container: obj, keys: ownKeys };
+    return { container: obj, keys: filterToKnownKeys(ownKeys, gamePreset) };
   }
 
   var MONEY_KEY_PATTERN = /money|coin|cash|gold/i;
@@ -580,7 +671,7 @@
 
   function renderAttrs() {
     var match = state.matches[state.selectedIndex];
-    var picked = pickAttributeContainer(match.obj, match.matchedKey);
+    var picked = pickAttributeContainer(match.obj, match.matchedKey, state.gamePreset);
     state.attrContainer = picked.container;
     state.attrKeys = picked.keys;
     state.moneyField = findMoneyField(match.obj, match.matchedKey);
@@ -590,9 +681,12 @@
       var row = document.createElement('div');
       row.className = 'attr-row';
       var currentVal = picked.container[key];
+      var isArrayVal = Array.isArray(currentVal);
+      var currentDisplay = isArrayVal ? currentVal.join(', ') : currentVal;
+      var newDisplay = isArrayVal ? currentVal.map(function () { return 20; }).join(', ') : 20;
       row.innerHTML =
         '<label><input type="checkbox" checked data-key="' + escapeHtml(key) + '"> ' + escapeHtml(key) + '</label>' +
-        '<span class="attr-value">' + currentVal + ' → <span class="new">20</span></span>';
+        '<span class="attr-value">' + escapeHtml(String(currentDisplay)) + ' → <span class="new">' + escapeHtml(String(newDisplay)) + '</span></span>';
       attrList.appendChild(row);
     });
 
@@ -622,8 +716,14 @@
     checkboxes.forEach(function (cb) {
       if (cb.checked) {
         var key = cb.getAttribute('data-key');
-        state.attrContainer[key] = 20;
-        changes.push(key + ' → 20');
+        var current = state.attrContainer[key];
+        if (Array.isArray(current)) {
+          state.attrContainer[key] = current.map(function () { return 20; });
+          changes.push(key + ' → ' + state.attrContainer[key].join(','));
+        } else {
+          state.attrContainer[key] = 20;
+          changes.push(key + ' → 20');
+        }
       }
     });
 
@@ -650,7 +750,18 @@
         (moneyInvalid ? ' (' + state.moneyField.key + ' left unchanged — enter a valid number)' : '') + '.';
     }
 
-    jsonPreview.textContent = JSON.stringify(state.data, null, 2);
+    // Export compact (no indentation) -- some save files are tens of MB, and
+    // pretty-printing plus rendering that much text can freeze the page for
+    // a long time. Only pretty-print a bounded preview.
+    var compactJson = JSON.stringify(state.data);
+    state.exportJson = compactJson;
+    var PREVIEW_LIMIT = 200000;
+    if (compactJson.length <= PREVIEW_LIMIT) {
+      jsonPreview.textContent = JSON.stringify(state.data, null, 2);
+    } else {
+      jsonPreview.textContent = compactJson.slice(0, PREVIEW_LIMIT) +
+        '\n\n… preview truncated (' + (compactJson.length / 1e6).toFixed(1) + ' MB total). Download or Copy still exports the full file.';
+    }
     exportCard.classList.remove('hidden');
     exportCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
@@ -722,11 +833,11 @@
   }
 
   downloadBtn.addEventListener('click', function () {
-    triggerDownload(JSON.stringify(state.data, null, 2), state.originalName + '-edited.json');
+    triggerDownload(state.exportJson, state.originalName + '-edited.json');
   });
 
   copyBtn.addEventListener('click', function () {
-    var jsonStr = JSON.stringify(state.data, null, 2);
+    var jsonStr = state.exportJson;
     var showResult = function (ok) {
       copyStatus.className = 'status ' + (ok ? 'ok' : 'error');
       copyStatus.textContent = ok
